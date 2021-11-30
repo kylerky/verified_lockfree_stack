@@ -1,0 +1,46 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        jobtype: [fmtcheck, compile]
+
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Setup Java
+      uses: actions/setup-java@v2
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Cache sbt
+      uses: actions/cache@v2
+      with:
+        path: .sbt
+        key: test-${{ matrix.jobtype }}-${{ hashFiles('**/build.sbt', '**/project/**') }}
+
+    - name: Build and Test
+      run: |
+        case ${{ matrix.jobtype }} in
+          fmtcheck)
+            sbt -v -Dfile.encoding=UTF-8 scalafmtCheck
+            ;;
+          compile)
+            sbt -v -Dfile.encoding=UTF-8 compile
+            ;;
+          *)
+            echo unknown jobtype
+            exit 1
+            ;;
+        esac
+        find "$HOME/.sbt" -name "*.lock" -delete || true
