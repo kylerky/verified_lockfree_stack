@@ -8,3 +8,8 @@ lazy val root = project
 lazy val core = project
   .in(file("core"))
   .settings(name := "lock_free_stack")
+
+// lazy val verified = project
+//   .in(file("verified"))
+//   .enablePlugins(StainlessPlugin)
+//   .settings(name := "verified_lock_free_stack")

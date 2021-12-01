@@ -5,3 +5,6 @@ target/
 .metals/
 
 metals.sbt
+
+# stainless
+.stainless-cache/
