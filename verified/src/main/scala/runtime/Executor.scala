@@ -133,6 +133,10 @@ object Executor {
     (predicate(state) &&
       historyMaintainsInvariant(predicate, f, res, schedule)) ==>
       res.forall(predicate(_))
+
+      &&
+
+      res == run(f, state, schedule)
   )
 
   // auxiliary lemmas
