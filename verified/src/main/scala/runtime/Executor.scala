@@ -4,6 +4,7 @@ import stainless.lang._
 import stainless.collection._
 import stainless.annotation._
 import stainless.equations._
+import scala.collection.immutable
 
 object Executor {
   type TaskChoice = BigInt
@@ -163,9 +164,8 @@ object Executor {
   ): Boolean = {
     require(history.nonEmpty)
     history
-      .zip(history.tail)
       .zip(schedule)
-      .forall { case ((s0, s1), c) => choiceValid(c, s0) }
+      .forall { case (s, c) => choiceValid(c, s) }
   }
 
   def historyTaskNumEqual[S, T](
@@ -244,14 +244,57 @@ object Executor {
     assert(res == runHistory)
     runHistory
   }.ensuring(res =>
-    (predicate(state) &&
-      historyMaintainsInvariant(predicate, f, res, schedule)) ==>
-      res.forall(predicate(_))
-
-      &&
-
+    predicateForAllImplication(predicate, f, state, res, schedule) &&
       res == run(f, state, schedule)
   )
+
+  def predicateForAllImplication[S, T](
+      predicate: State[S, T] => Boolean,
+      f: (S, T) => (S, T),
+      state: State[S, T],
+      history: History[S, T],
+      schedule: Schedule
+  ): Boolean = {
+    require(history.nonEmpty)
+    require(runConsistent(f, schedule, history))
+
+    historySatisfiesInvariant(predicate, f, state, history, schedule) ==>
+      history.forall(predicate(_))
+  }
+
+  def predicateForAllPremiseTrue[S, T](
+      predicate: State[S, T] => Boolean,
+      f: (S, T) => (S, T),
+      state: State[S, T],
+      history: History[S, T],
+      schedule: Schedule
+  ): Unit = {
+    require(history.nonEmpty)
+    require(runConsistent(f, schedule, history))
+    require(predicateForAllImplication(predicate, f, state, history, schedule))
+    require(historySatisfiesInvariant(predicate, f, state, history, schedule))
+  }.ensuring(predicateForAll(predicate, history))
+
+  def predicateForAll[S, T](
+      predicate: State[S, T] => Boolean,
+      history: History[S, T]
+  ): Boolean = {
+    history.forall(predicate(_))
+  }
+
+  def historySatisfiesInvariant[S, T](
+      predicate: State[S, T] => Boolean,
+      f: (S, T) => (S, T),
+      state: State[S, T],
+      history: History[S, T],
+      schedule: Schedule
+  ): Boolean = {
+    require(history.nonEmpty)
+    require(runConsistent(f, schedule, history))
+
+    predicate(state) &&
+    historyMaintainsInvariant(predicate, f, history, schedule)
+  }
 
   // auxiliary lemmas
   def updatedListSameLength[T](l: List[T], i: BigInt, elem: T): Unit = {
