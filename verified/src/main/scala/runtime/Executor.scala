@@ -35,6 +35,11 @@ object Executor {
     schedule.forall(choiceValid(_, state))
   }
 
+  def scheduleValidSub[S, T](schedule: Schedule, state: State[S, T]) = {
+    require(schedule.nonEmpty)
+    require(scheduleValid(schedule, state))
+  }.ensuring(scheduleValid(schedule.tail, state))
+
   def scheduleValidStateContentAgnostic[S, T](
       @induct schedule: Schedule,
       s0: State[S, T],
@@ -72,7 +77,12 @@ object Executor {
     val res = f(state.shared, tasks(choice))
     updatedListSameLength(tasks, choice, res._2)
     State[S, T](res._1, tasks.updated(choice, res._2))
-  }.ensuring(res => res.taskNum == state.taskNum)
+  }.ensuring(res =>
+    res.taskNum == state.taskNum
+      && res.tasks ==
+      state.tasks
+        .updated(choice, f(state.shared, state.tasks(choice))._2)
+  )
 
   def maintainInvariant[S, T](
       predicate: State[S, T] => Boolean,
@@ -110,6 +120,20 @@ object Executor {
     runConsistentStepWise(f, schedule, history) &&
     runConsistentChoice(schedule, history)
   }
+
+  def runConsistentSubHistory[S, T](
+      f: (S, T) => (S, T),
+      schedule: Schedule,
+      history: History[S, T]
+  ) = {
+    require(schedule.nonEmpty)
+    require(history.length == (schedule.length + 1))
+    require(runConsistent(f, schedule, history))
+
+    scheduleValidSub(schedule, history.head)
+    scheduleValidPropagates(schedule.tail, history)
+    assert(history.forall(scheduleValid(schedule.tail, _)))
+  }.ensuring(runConsistent(f, schedule.tail, history.tail))
 
   def runConsistentStepWise[S, T](
       f: (S, T) => (S, T),
