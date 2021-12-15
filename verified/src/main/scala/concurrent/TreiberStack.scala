@@ -19,7 +19,8 @@ object TreiberStack {
   case class Shared[T](
       head: Option[Node[T]],
       @ghost
-      reference: List[T]
+      reference: List[T],
+      res: Option[T]
   )
 
   type StackState[T] = State[Shared[T], TaskState[T]]
@@ -109,10 +110,41 @@ object TreiberStack {
 
   def stackSharedStateValid[T](shared: Shared[T]): Boolean = {
     shared match {
-      case Shared(None(), Nil()) => true
-      case Shared(Some(v), Cons(head, rest)) =>
-        (v.value == head) && stackSharedStateValid(Shared(v.next, rest))
-      case Shared(_, _) => false
+      case Shared(None(), Nil(), _) => true
+      case Shared(Some(v), Cons(head, rest), _) =>
+        (v.value == head) && stackSharedStateValid(
+          shared.copy(head = v.next, reference = rest)
+        )
+      case Shared(_, _, _) => false
+    }
+  }
+
+  def stackSharedStateValidResAgnorant[T](
+      shared: Shared[T],
+      r: Option[T]
+  ): Unit = {
+    shared match {
+      case Shared(None(), Nil(), _) =>
+      case Shared(Some(v), Cons(head, rest), _) =>
+        stackSharedStateValidResAgnorant(
+          shared.copy(head = v.next, reference = rest),
+          r
+        )
+      case Shared(_, _, _) =>
+    }
+  }.ensuring(
+    stackSharedStateValid(shared) ==> stackSharedStateValid(
+      shared.copy(res = r)
+    )
+  )
+
+  def popResMatch[T](shared: Shared[T], newShared: Shared[T]): Boolean = {
+    shared match {
+      case Shared(_, Nil(), _) => newShared.res.isEmpty
+      case Shared(_, Cons(head, _), _) => {
+        val r = newShared.res
+        r.isEmpty || r.get == head
+      }
     }
   }
 
@@ -122,35 +154,58 @@ object TreiberStack {
 
   def stackOp[T](x: Shared[T], y: TaskState[T]): (Shared[T], TaskState[T]) = {
     y match {
-      case PushRead(v) => (x, PushTry(v, x.head))
+      case PushRead(v) => {
+        stackSharedStateValidResAgnorant(x, None())
+        (x.copy(res = None()), PushTry(v, x.head))
+      }
       case PushTry(v, oldHead) => {
         if (x.head == oldHead) {
           val node = Node(v, oldHead)
-          (Shared(Some(node), Cons(v, x.reference)), PushRead(v))
+          stackSharedStateValidResAgnorant(
+            Shared(Some(node), Cons(v, x.reference), x.res),
+            None()
+          )
+          (Shared(Some(node), Cons(v, x.reference), None()), PushRead(v))
         } else {
-          (x, PushRead(v))
+          stackSharedStateValidResAgnorant(x, None())
+          (x.copy(res = None()), PushRead(v))
         }
       }
 
-      case PopRead() => (x, PopTry(x.head))
+      case PopRead() => {
+        stackSharedStateValidResAgnorant(x, None())
+        (x.copy(res = None()), PopTry(x.head))
+      }
       case PopTry(oldHead) => {
         oldHead match {
-          case None() => (x, PopRead[T]())
+          case None() => {
+            stackSharedStateValidResAgnorant(x, None())
+            (x.copy(res = None()), PopRead[T]())
+          }
           case Some(v) => {
             val newHead = v.next
             if (x.head == oldHead) {
               // work around in case `reference` is empty
               @ghost
               val reference = referenceWorkAround(x.reference, v.value)
-              (Shared(newHead, reference.tail), PopRead[T]())
+              stackSharedStateValidResAgnorant(
+                Shared(newHead, reference.tail, x.res),
+                Some(v.value)
+              )
+              (Shared(newHead, reference.tail, Some(v.value)), PopRead[T]())
             } else {
-              (x, PopRead[T]())
+              stackSharedStateValidResAgnorant(x, None())
+              (x.copy(res = None()), PopRead[T]())
             }
           }
         }
       }
     }
-  }.ensuring(res => stackSharedStateValid(x) ==> stackSharedStateValid(res._1))
+  }.ensuring(res =>
+    (stackSharedStateValid(x) ==> (stackSharedStateValid(res._1)
+      && (y.isInstanceOf[PopTry[T]] ==> popResMatch(x, res._1))))
+      && (y.isInstanceOf[PopTry[T]] || res._1.res.isEmpty)
+  )
 
   def run[T](schedule: Schedule, s: StackState[T]): List[StackState[T]] = {
     require(Executor.scheduleValid(schedule, s))
