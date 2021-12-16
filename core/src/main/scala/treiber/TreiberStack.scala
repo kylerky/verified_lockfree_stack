@@ -3,7 +3,7 @@ package treiber
 import java.util.concurrent.atomic.AtomicReference
 
 class TreiberStack[T] {
-  private class Node(var next: Node, var data: T) {}
+  private class Node(var next: Node, var data: T)
 
   private var head = new AtomicReference[Node]()
 
