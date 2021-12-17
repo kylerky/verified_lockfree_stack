@@ -10,8 +10,11 @@ object Executor {
   type TaskChoice = BigInt
   type Schedule = List[TaskChoice]
 
+  // capture all the states of the system
   case class State[SharedState, TaskState](
+      // all the shared variables
       val shared: SharedState,
+      // all the private states
       val tasks: List[TaskState]
   ) {
     def taskNum = tasks.length
@@ -66,6 +69,7 @@ object Executor {
     }
   }.ensuring(history.forall(scheduleValid(schedule, _)))
 
+  // run one step of a chosen task
   def runOne[S, T](
       f: (S, T) => (S, T),
       state: State[S, T],
@@ -208,6 +212,9 @@ object Executor {
     require(s0.taskNum == s1.taskNum)
   }.ensuring(historyTaskNumEqual(history, s1))
 
+  // run the system from an initial state according a schedule
+  //
+  // @returns a trace containing states and results
   def run[S, T](
       f: (S, T) => (S, T),
       state: State[S, T],
