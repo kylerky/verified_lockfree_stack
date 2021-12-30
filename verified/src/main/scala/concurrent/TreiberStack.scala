@@ -14,13 +14,18 @@ object TreiberStack {
   case class PopRead[T]() extends TaskState[T]
   case class PopTry[T](oldHead: Option[Node[T]]) extends TaskState[T]
 
+  sealed abstract class Result[T]
+  case class PopSuccess[T](v: T) extends Result[T]
+  case class PushSuccess[T]() extends Result[T]
+  case class Pending[T]() extends Result[T]
+
   case class Node[T](value: T, next: Option[Node[T]])
 
   case class Shared[T](
       head: Option[Node[T]],
       @ghost
       reference: List[T],
-      res: Option[T]
+      res: Result[T]
   )
 
   type StackState[T] = State[Shared[T], TaskState[T]]
@@ -121,7 +126,7 @@ object TreiberStack {
 
   def stackSharedStateValidResAgnorant[T](
       shared: Shared[T],
-      r: Option[T]
+      r: Result[T]
   ): Unit = {
     shared match {
       case Shared(None(), Nil(), _) =>
@@ -139,12 +144,12 @@ object TreiberStack {
   )
 
   def popResMatch[T](shared: Shared[T], newShared: Shared[T]): Boolean = {
-    shared match {
-      case Shared(_, Nil(), _) => newShared.res.isEmpty
-      case Shared(_, Cons(head, _), _) => {
-        val r = newShared.res
-        r.isEmpty || r.get == head
+    (shared, newShared.res) match {
+      case (Shared(_, _, _), Pending()) => true
+      case (Shared(_, Cons(head, _), _), PopSuccess(r)) => {
+        r == head
       }
+      case _ => false
     }
   }
 
@@ -155,32 +160,32 @@ object TreiberStack {
   def stackOp[T](x: Shared[T], y: TaskState[T]): (Shared[T], TaskState[T]) = {
     y match {
       case PushRead(v) => {
-        stackSharedStateValidResAgnorant(x, None())
-        (x.copy(res = None()), PushTry(v, x.head))
+        stackSharedStateValidResAgnorant(x, Pending())
+        (x.copy(res = Pending()), PushTry(v, x.head))
       }
       case PushTry(v, oldHead) => {
         if (x.head == oldHead) {
           val node = Node(v, oldHead)
           stackSharedStateValidResAgnorant(
             Shared(Some(node), Cons(v, x.reference), x.res),
-            None()
+            PushSuccess()
           )
-          (Shared(Some(node), Cons(v, x.reference), None()), PushRead(v))
+          (Shared(Some(node), Cons(v, x.reference), PushSuccess()), PushRead(v))
         } else {
-          stackSharedStateValidResAgnorant(x, None())
-          (x.copy(res = None()), PushRead(v))
+          stackSharedStateValidResAgnorant(x, Pending())
+          (x.copy(res = Pending()), PushRead(v))
         }
       }
 
       case PopRead() => {
-        stackSharedStateValidResAgnorant(x, None())
-        (x.copy(res = None()), PopTry(x.head))
+        stackSharedStateValidResAgnorant(x, Pending())
+        (x.copy(res = Pending()), PopTry(x.head))
       }
       case PopTry(oldHead) => {
         oldHead match {
           case None() => {
-            stackSharedStateValidResAgnorant(x, None())
-            (x.copy(res = None()), PopRead[T]())
+            stackSharedStateValidResAgnorant(x, Pending())
+            (x.copy(res = Pending()), PopRead[T]())
           }
           case Some(v) => {
             val newHead = v.next
@@ -190,12 +195,15 @@ object TreiberStack {
               val reference = referenceWorkAround(x.reference, v.value)
               stackSharedStateValidResAgnorant(
                 Shared(newHead, reference.tail, x.res),
-                Some(v.value)
+                PopSuccess(v.value)
               )
-              (Shared(newHead, reference.tail, Some(v.value)), PopRead[T]())
+              (
+                Shared(newHead, reference.tail, PopSuccess(v.value)),
+                PopRead[T]()
+              )
             } else {
-              stackSharedStateValidResAgnorant(x, None())
-              (x.copy(res = None()), PopRead[T]())
+              stackSharedStateValidResAgnorant(x, Pending())
+              (x.copy(res = Pending()), PopRead[T]())
             }
           }
         }
@@ -204,7 +212,8 @@ object TreiberStack {
   }.ensuring(res =>
     (stackSharedStateValid(x) ==> (stackSharedStateValid(res._1)
       && (y.isInstanceOf[PopTry[T]] ==> popResMatch(x, res._1))))
-      && (y.isInstanceOf[PopTry[T]] || res._1.res.isEmpty)
+      && (!y.isInstanceOf[PopTry[T]] ==> !res._1.res
+        .isInstanceOf[PopSuccess[T]])
   )
 
   def run[T](schedule: Schedule, s: StackState[T]): List[StackState[T]] = {
