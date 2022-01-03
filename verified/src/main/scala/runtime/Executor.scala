@@ -139,6 +139,22 @@ object Executor {
     assert(history.forall(scheduleValid(schedule.tail, _)))
   }.ensuring(runConsistent(f, schedule.tail, history.tail))
 
+  def runConsistentSubHistory[S, T](
+      f: (S, T) => (S, T),
+      schedule: Schedule,
+      history: History[S, T],
+      n: BigInt
+  ): Unit = {
+    require(schedule.length >= n)
+    require(history.length == (schedule.length + 1))
+    require(runConsistent(f, schedule, history))
+
+    if (n > 0) {
+      runConsistentSubHistory(f, schedule, history)
+      runConsistentSubHistory(f, schedule.tail, history.tail, n - 1)
+    }
+  }.ensuring(runConsistent(f, schedule.drop(n), history.drop(n)))
+
   def runConsistentStepWise[S, T](
       f: (S, T) => (S, T),
       schedule: Schedule,
