@@ -219,6 +219,19 @@ object Executor {
     history.forall(_.taskNum == s.taskNum)
   }
 
+  def historyTaskNumEqualIndex[S, T](
+      history: History[S, T],
+      i: BigInt,
+      s: State[S, T]
+  ): Unit = {
+    require(historyTaskNumEqual(history, s))
+    require(i >= 0)
+    require(i < history.length)
+    if (i != 0) {
+      historyTaskNumEqualIndex(history.tail, i - 1, s)
+    }
+  }.ensuring(history(i).taskNum == s.taskNum)
+
   def historyTaskNumEqualSubstitution[S, T](
       @induct history: History[S, T],
       s0: State[S, T],

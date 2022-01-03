@@ -295,22 +295,51 @@ object TreiberStack {
     Executor.runConsistentSubHistory(stackOp[T], schedule, history, start)
 
     val subHistory = history.drop(start)
-    findSuccessfulOperationIndex(
+    val res = findSuccessfulOperationIndex(
       subHistory,
       schedule.drop(start),
       0,
       subHistory,
       0
     )
-  }.ensuring(
-    true
-    // _.map(i =>
-    //   i + start + 1 >= 0
-    //     && i + start + 1 < history.length
-    //     && !history(i + start + 1).shared.res
-    //       .isInstanceOf[Pending[T]]
-    // )
-    //   .getOrElse(true)
+
+    if (res.nonEmpty) {
+      val r = res.get
+      assert(r >= 0)
+      listDropApply(history, start, r + 1)
+    }
+
+    assert(
+      (subHistory.length > 2 * subHistory.head.taskNum + 1) ==> res.nonEmpty
+    )
+
+    assert(subHistory.length == history.length - start)
+
+    listDropApply(history, start, 0)
+    assert(subHistory.head == history(start))
+
+    assert(Executor.historyTaskNumEqual(history, history.head))
+    Executor.historyTaskNumEqualIndex(history, start, history.head)
+    Executor.historyTaskNumEqualSubstitution(
+      history,
+      history.head,
+      history(start)
+    )
+
+    assert(
+      (history.length > 2 * history.head.taskNum + start + 1) ==> res.nonEmpty
+    )
+
+    res
+  }.ensuring(res =>
+    ((schedule.length > 2 * history.head.taskNum + start) ==> res.nonEmpty)
+      && res
+        .map(r =>
+          r >= 0
+            && start + r + 1 < history.length
+            && !history(start + r + 1).shared.res.isInstanceOf[Pending[T]]
+        )
+        .getOrElse(true)
   )
 
   def canSucceed[T](shared: Shared[T], taskState: TaskState[T]): Boolean = {
@@ -583,8 +612,8 @@ object TreiberStack {
     (fullHistory.length > 2 * history.head.taskNum + 1 ==> res.nonEmpty)
       && res
         .map(r =>
-          r < fullHistory.length - 1
-            && r >= 0
+          r >= 0
+            && r + 1 < fullHistory.length
             && !fullHistory(r + 1).shared.res.isInstanceOf[Pending[T]]
         )
         .getOrElse(true)
