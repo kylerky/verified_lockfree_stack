@@ -6,9 +6,8 @@ subproject `verified`.
 
 # How to Verify the Code Using Stainless
 
-For some reasons, `sbt` is not able to locate the `StainlessPlugin`
-from the public repositories, which makes us to run `stainless`
-manually.
+For some reasons, `sbt` is not able to locate the `StainlessPlugin` in
+ public repositories, which makes us to run `stainless` manually.
 
 Under the root directory of the project, run the following command:
 
