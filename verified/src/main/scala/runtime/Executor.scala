@@ -184,7 +184,7 @@ object Executor {
       choice: TaskChoice
   ): Boolean = {
     choiceValid(choice, sOld) && runConsistentStepOne(f, sOld, sNew, choice)
-  }
+  }.ensuring(_ ==> (sNew == runOne(f, sOld, choice)))
 
   def runConsistentStepOnePredicate[S, T](
       predicate: State[S, T] => Boolean,
@@ -340,6 +340,42 @@ object Executor {
       history: History[S, T]
   ): Boolean = {
     history.forall(predicate(_))
+  }
+
+  def predicateForAllZipped[S, T](
+      predicate: State[S, T] => Boolean,
+      history: History[S, T],
+      schedule: Schedule
+  ): Unit = {
+    require(predicateForAll(predicate, history))
+    require(history.length == schedule.length + 1)
+    if (schedule.nonEmpty) {
+      predicateForAllZipped(predicate, history.tail, schedule.tail)
+    }
+  }.ensuring(
+    predicateForAllZipWithSchedule(
+      predicateOmitZipped(predicate),
+      history,
+      schedule
+    )
+  )
+
+  def predicateOmitZipped[S, T](
+      predicate: State[S, T] => Boolean
+  ): (((State[S, T], State[S, T]), TaskChoice)) => Boolean = {
+    { case ((s, _), _) => predicate(s) }
+  }
+
+  def predicateForAllZipWithSchedule[S, T](
+      predicate: (((State[S, T], State[S, T]), TaskChoice)) => Boolean,
+      history: History[S, T],
+      schedule: Schedule
+  ): Boolean = {
+    require(history.length == schedule.length + 1)
+    history
+      .zip(history.tail)
+      .zip(schedule)
+      .forall(predicate)
   }
 
   def historySatisfiesInvariant[S, T](

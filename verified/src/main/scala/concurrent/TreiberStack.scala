@@ -212,11 +212,22 @@ object TreiberStack {
     }
   }.ensuring(res =>
     (stackSharedStateValid(x) ==> (stackSharedStateValid(res._1)
-      && (y.isInstanceOf[PopTry[T]] ==> popResMatch(x, res._1))))
-      && (!y.isInstanceOf[PopTry[T]] ==>
-        (!res._1.res.isInstanceOf[PopSuccessNone[T]]
-          && !res._1.res.isInstanceOf[PopSuccessSome[T]]))
+      && resMatch(x, y, res._1)))
   )
+
+  def resMatch[T](
+      x: Shared[T],
+      y: TaskState[T],
+      nextShared: Shared[T]
+  ): Boolean = {
+    (stackSharedStateValid(x) ==> (stackSharedStateValid(nextShared)
+      && (y.isInstanceOf[PopTry[T]] ==> popResMatch(x, nextShared))
+      && (y.isInstanceOf[PushTry[T]] ==>
+        (nextShared.res.isInstanceOf[PushSuccess[T]]
+          || nextShared.res.isInstanceOf[Pending[T]]))
+      && ((y.isInstanceOf[PopRead[T]] || y.isInstanceOf[PushRead[T]]) ==>
+        nextShared.res.isInstanceOf[Pending[T]])))
+  }
 
   def run[T](schedule: Schedule, s: StackState[T]): List[StackState[T]] = {
     require(Executor.scheduleValid(schedule, s))
